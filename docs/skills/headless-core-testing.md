@@ -1,12 +1,11 @@
 ---
-name: headless-core-testing
+id: headless-core-testing
+title: Headless C++ core testing with QtTest and JS/C++ determinism check
+last_used: "2026-04-20"
+created: "2026-04-20"
 status: active
-verified_date: 2026-04-15
-verified_by_us: true
-basecamp_version: "0.2.x"
+note: Direct QtTest approach (no logoscore daemon). For logoscore-based testing see basecamp-skills/logoscore-headless-testing.
 ---
-
-# Headless Core Module Testing
 
 ## CMakeLists.txt test binary
 

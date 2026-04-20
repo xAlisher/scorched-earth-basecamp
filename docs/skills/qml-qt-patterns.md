@@ -1,13 +1,11 @@
 ---
-name: qml-qt-patterns
+id: qml-qt-patterns
+title: QML/Qt patterns — game-specific (gamePhase, myTurn, input persistence)
+last_used: "2026-04-20"
+created: "2026-04-20"
 status: active
-verified_date: 2026-04-15
-verified_by_us: true
-basecamp_version: "0.2.x"
-note: Extends basecamp-skills/qml-patterns.md — game-specific only
+note: Game-specific extensions. Platform-wide QML pitfalls live in basecamp-skills/skills/qml-*.
 ---
-
-# QML/Qt Patterns — Game-Specific
 
 ## gamePhase state machine
 
@@ -24,7 +22,7 @@ Gate all controls: `enabled: root.myTurn && root.gamePhase === 1`
 
 ```qml
 // Hot-seat: always true when it's any player's turn
-property bool myTurn: gamePhase === 1  // hotseat
+property bool myTurn: gamePhase === 1
 
 // Multiplayer: only when it's this client's role
 property bool myTurn: activePlayer === myRole && gamePhase === 1
@@ -32,9 +30,8 @@ property bool myTurn: activePlayer === myRole && gamePhase === 1
 
 ## Inputs persist after shot
 
-Do NOT reset aimAngle / aimPower after firing.
-Player sees ghost arc of their shot and adjusts from previous values.
-Only reset on newGame().
+Do NOT reset `aimAngle` / `aimPower` after firing. Player sees ghost arc of their
+shot and adjusts from previous values. Only reset on `newGame()`.
 
 ## Keys.onPressed requires focus: true on root Rectangle
 

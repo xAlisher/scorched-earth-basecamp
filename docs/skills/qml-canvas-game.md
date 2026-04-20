@@ -1,12 +1,10 @@
 ---
-name: qml-canvas-game
+id: qml-canvas-game
+title: QML Canvas game rendering — ghost arc, terrain mutation, animation timer
+last_used: "2026-04-20"
+created: "2026-04-20"
 status: active
-verified_date: 2026-04-15
-verified_by_us: true
-basecamp_version: "0.2.x"
 ---
-
-# QML Canvas — Game Rendering
 
 ## Ghost arc pattern
 
@@ -26,7 +24,6 @@ function onFire() {
 function onAnimationComplete() {
     root.ghostArcPts = root.trajectoryPts   // freeze final arc position
     root.projectile = null
-    // ...
 }
 ```
 
