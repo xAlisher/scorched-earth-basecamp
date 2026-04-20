@@ -4,6 +4,12 @@ else()
     set(LOGOS_CPP_SDK "/nix/store/k8v22j4ds9vyjj67g6r5i4pvi9an755d-logos-cpp-sdk-headers-0.1.0")
 endif()
 
+if(DEFINED ENV{LOGOS_CPP_SDK_LIB})
+    set(LOGOS_CPP_SDK_LIB "$ENV{LOGOS_CPP_SDK_LIB}")
+else()
+    set(LOGOS_CPP_SDK_LIB "/nix/store/ypxadc350lzj0rmic9nr1gl8pldcbs7v-logos-cpp-sdk-lib-0.1.0")
+endif()
+
 if(DEFINED ENV{LOGOS_LIBLOGOS_HEADERS})
     set(LOGOS_LIBLOGOS_HEADERS "$ENV{LOGOS_LIBLOGOS_HEADERS}")
 else()
@@ -44,7 +50,12 @@ target_include_directories(scorched_earth_plugin PRIVATE
     "${LOGOS_LIBLOGOS_HEADERS}/core"
 )
 
-target_link_libraries(scorched_earth_plugin PRIVATE Qt6::Core)
+target_link_libraries(scorched_earth_plugin PRIVATE
+    Qt6::Core
+    -Wl,--whole-archive
+    "${LOGOS_CPP_SDK_LIB}/lib/liblogos_sdk.a"
+    -Wl,--no-whole-archive
+)
 
 # ── Install ─────────────────────────────────────────────────────────────────
 set(MODULE_DIR "modules/scorched-earth")
