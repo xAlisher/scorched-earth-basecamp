@@ -1,0 +1,24 @@
+# Reference clones — local research only, not part of the module
+logos-chat-legacy-module/
+logos-chat-legacy-ui/
+logos-chat-tui/
+
+# Build artifacts
+build/
+result/
+*.so
+*.a
+*.o
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Qt MOC
+moc_*.cpp
+*.moc
+
+# Nix
+.direnv/
