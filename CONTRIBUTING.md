@@ -40,5 +40,5 @@ cd scorched-earth && nix build && ./result/bin/tst_game
 
 ## Skills
 
-New pattern found → check basecamp-skills/ first → if game-specific, add to `skills/`.
+New pattern found → check basecamp-skills/ first → if game-specific, add to `docs/skills/`.
 Include AppImage version in frontmatter. Reference in PR description.

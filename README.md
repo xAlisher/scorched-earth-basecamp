@@ -1,7 +1,7 @@
 # basecamp-scorched-earth
 
 Turn-based artillery game for [Logos Basecamp](https://github.com/logos-co/logos-app).
-Hot-seat single-player now. P2P multiplayer via Waku relay coming next.
+Hot-seat single-player now. P2P multiplayer via Logos Messaging (xWaku) coming next.
 
 **Status: experimental / dev-only** — pre-release Basecamp target. Not consumer-facing.
 
@@ -12,7 +12,7 @@ Hot-seat single-player now. P2P multiplayer via Waku relay coming next.
 
 ## Multiplayer (coming)
 
-P2P via `delivery_module` (Waku relay). No central server.
+P2P via `delivery_module` (Logos Messaging / xWaku). No central server.
 Share a 6-char room code out of band to start a game.
 
 ## Build
@@ -21,7 +21,7 @@ Requires Nix. Top-level `CMakeLists.txt` builds both modules.
 
 ## Skills
 
-Project-local skills in `skills/`. Complement — never duplicate — `basecamp-skills/`.
+Project-local skills in `docs/skills/`. Complement — never duplicate — `basecamp-skills/`.
 
 ## Contributing
 

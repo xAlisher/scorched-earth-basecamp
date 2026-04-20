@@ -4,7 +4,7 @@ title: QML/Qt patterns — game-specific (gamePhase, myTurn, input persistence)
 last_used: "2026-04-20"
 created: "2026-04-20"
 status: active
-note: Game-specific extensions. Platform-wide QML pitfalls live in basecamp-skills/skills/qml-*.
+note: Game-specific extensions. Platform-wide QML pitfalls live in basecamp-skills/qml-*.
 ---
 
 ## gamePhase state machine
