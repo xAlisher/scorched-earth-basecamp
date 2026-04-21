@@ -1,12 +1,11 @@
 {
-  "name": "scorched_earth_ui",
+  "name": "scorched_earth",
   "version": "0.1.0",
-  "type": "ui_qml",
-  "category": "games",
-  "description": "Scorched Earth — turn-based artillery game UI",
-  "view": "Main.qml",
-  "icon": "icons/scorched-earth.png",
-  "dependencies": ["scorched_earth"],
+  "type": "core",
+  "category": "game",
+  "description": "Scorched Earth — turn-based artillery game",
+  "main": "scorched_earth_plugin",
+  "dependencies": [],
   "nix": {
     "packages": {
       "build": [],
