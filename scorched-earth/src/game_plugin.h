@@ -16,7 +16,7 @@ struct Tank {
 class ScorchedEarthPlugin : public QObject, public ScorchedEarthInterface
 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID ScorchedEarthInterface_iid FILE "plugin_metadata.json")
+    Q_PLUGIN_METADATA(IID ScorchedEarthInterface_iid FILE "metadata.json")
     Q_INTERFACES(ScorchedEarthInterface PluginInterface)
 
 public:
