@@ -35,7 +35,9 @@ std::vector<PhysPoint> trajectory(float startX, float startY,
 // Walk pts until a collision with terrain or tank.
 // Integer arithmetic for grid lookup, float coords for path.
 // Tank hit zone: abs(px-tankX) < BLOCK_SIZE && abs(py-tankY) < BLOCK_SIZE
+// shooterIdx: 0-based index of the firing tank — excluded from hit detection
 Collision firstCollision(const std::vector<PhysPoint>& pts,
                          const std::vector<bool>& terrain,
                          const TerrainLayout& layout,
-                         const std::vector<TankPos>& tanks);
+                         const std::vector<TankPos>& tanks,
+                         int shooterIdx = -1);

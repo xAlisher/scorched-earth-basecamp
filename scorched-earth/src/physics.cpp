@@ -23,19 +23,43 @@ std::vector<PhysPoint> trajectory(float startX, float startY,
 Collision firstCollision(const std::vector<PhysPoint>& pts,
                          const std::vector<bool>& terrain,
                          const TerrainLayout& layout,
-                         const std::vector<TankPos>& tanks)
+                         const std::vector<TankPos>& tanks,
+                         int shooterIdx)
 {
+    if (pts.empty()) return {};
+
+    const int startCol = (int)(pts[0].x / layout.blockSize);
+    const int startRow = (int)(pts[0].y / layout.blockSize);
+
+    bool leftStart  = false;   // true once the missile has left the starting cell
+    bool descending = false;   // true once the missile starts moving downward
+    float prevY     = pts[0].y;
+
     for (const auto& p : pts) {
-        // Tank check (float coords, integer zone)
+        const int col = (int)(p.x / layout.blockSize);
+        const int row = (int)(p.y / layout.blockSize);
+
+        // Skip the starting cell on the first pass only
+        if (!leftStart) {
+            if (col == startCol && row == startRow) { prevY = p.y; continue; }
+            leftStart = true;
+        }
+
+        // Detect apex — once y increases the missile is descending (screen-Y down = larger)
+        if (!descending && p.y > prevY) descending = true;
+        prevY = p.y;
+
+        // Tank hit zone: full column width (48px) × 30px tall.
+        // Wider than the visual body (40×20) for playable precision.
+        // Self-hit (shooter) is only allowed after the missile starts descending.
         for (int i = 0; i < (int)tanks.size(); ++i) {
-            if (std::abs(p.x - tanks[i].x) < BLOCK_SIZE &&
-                std::abs(p.y - tanks[i].y) < BLOCK_SIZE) {
+            if (i == shooterIdx && !descending) continue;
+            if (p.x >= tanks[i].x      && p.x <= tanks[i].x + BLOCK_SIZE &&
+                p.y >= tanks[i].y - 30 && p.y <= tanks[i].y) {
                 return {true, true, i, -1, -1, p};
             }
         }
-        // Terrain check — integer grid lookup
-        const int col = (int)(p.x / layout.blockSize);
-        const int row = (int)(p.y / layout.blockSize);
+        // Terrain check
         if (col >= 0 && col < layout.cols && row >= 0 && row < layout.rows) {
             if (terrain[row * layout.cols + col])
                 return {true, false, -1, col, row, p};

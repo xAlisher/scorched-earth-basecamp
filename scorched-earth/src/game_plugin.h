@@ -26,7 +26,7 @@ public:
     Q_INVOKABLE QString newGame(int cols, int rows, int windForce) override;
     Q_INVOKABLE QString getState() override;
     Q_INVOKABLE int     moveTank(int tankId, int direction) override;
-    Q_INVOKABLE QString processShot(int tankId, float angle, float power) override;
+    Q_INVOKABLE QString processShot(int tankId, double angle, double power) override;
     Q_INVOKABLE int     gameStatus() override;
     Q_INVOKABLE int     activePlayer() override;
 

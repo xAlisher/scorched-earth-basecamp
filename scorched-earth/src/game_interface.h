@@ -19,7 +19,7 @@ public:
     Q_INVOKABLE virtual int moveTank(int tankId, int direction) = 0;
 
     // Fire shot. Returns JSON: {hit, tankId, removedBlocks, seq, status}
-    Q_INVOKABLE virtual QString processShot(int tankId, float angle, float power) = 0;
+    Q_INVOKABLE virtual QString processShot(int tankId, double angle, double power) = 0;
 
     // 0=ongoing, 1=p1wins, 2=p2wins
     Q_INVOKABLE virtual int gameStatus() = 0;

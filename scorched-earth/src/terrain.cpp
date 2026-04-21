@@ -18,10 +18,9 @@ std::vector<bool> buildHardcodedTerrain()
     // Row 4
     set(4, 1); set(4, 2); set(4, 3); set(4, 4); set(4, 5);
     set(4, 12); set(4, 13); set(4, 14); set(4, 15); set(4, 16);
-    // Row 5
+    // Row 5 — right side cols 14-19 removed to open ground-floor tunnel
     set(5, 0); set(5, 1); set(5, 2); set(5, 3); set(5, 4); set(5, 5);
     set(5, 8); set(5, 9); set(5, 10); set(5, 11);
-    set(5, 14); set(5, 15); set(5, 16); set(5, 17); set(5, 18); set(5, 19);
     // Rows 6-9: all alive
     for (int row = 6; row < rows; ++row)
         for (int col = 0; col < cols; ++col)
@@ -34,8 +33,20 @@ int terrainSnapY(const std::vector<bool>& terrain, int col, const TerrainLayout&
 {
     for (int row = 0; row < layout.rows; ++row) {
         if (terrain[row * layout.cols + col])
-            return row * layout.blockSize - layout.blockSize / 2;
+            return row * layout.blockSize;
     }
-    // No ground in column — place at bottom
-    return layout.rows * layout.blockSize - layout.blockSize / 2;
+    return layout.rows * layout.blockSize;
+}
+
+// Scan downward from the row containing currentY — returns the floor the tank
+// would land on if it entered this column at its current height (tunnel traversal).
+int terrainFloorY(const std::vector<bool>& terrain, int col, int currentY,
+                  const TerrainLayout& layout)
+{
+    int startRow = currentY / layout.blockSize;
+    for (int row = startRow; row < layout.rows; ++row) {
+        if (terrain[row * layout.cols + col])
+            return row * layout.blockSize;
+    }
+    return layout.rows * layout.blockSize;
 }

@@ -6,10 +6,7 @@
   "description": "Scorched Earth — turn-based artillery game",
   "manifestVersion": "0.2.0",
   "main": {
-    "linux-amd64":     "scorched_earth_plugin.so",
-    "linux-amd64-dev": "scorched_earth_plugin.so",
-    "linux-x86_64":    "scorched_earth_plugin.so",
-    "linux-x86_64-dev":"scorched_earth_plugin.so"
+    "linux-amd64": "scorched_earth_plugin.so"
   },
   "dependencies": [],
   "author": "xAlisher",
