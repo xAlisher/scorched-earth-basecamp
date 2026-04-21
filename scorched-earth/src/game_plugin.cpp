@@ -10,6 +10,15 @@ ScorchedEarthPlugin::ScorchedEarthPlugin()
     qDebug() << "ScorchedEarthPlugin: initialized";
 }
 
+ScorchedEarthPlugin::~ScorchedEarthPlugin()
+{
+    if (deliveryObject_) {
+        deliveryObject_->disconnectEvents();
+        deliveryObject_->release();
+        deliveryObject_ = nullptr;
+    }
+}
+
 void ScorchedEarthPlugin::snapTankY(int idx)
 {
     tanks_[idx].y = terrainSnapY(terrain_, tanks_[idx].x / layout_.blockSize, layout_);
@@ -210,4 +219,66 @@ int ScorchedEarthPlugin::gameStatus()
 int ScorchedEarthPlugin::activePlayer()
 {
     return activePlayer_;
+}
+
+QString ScorchedEarthPlugin::enableMultiplayer(const QString& contentTopic)
+{
+    if (!logosAPI)
+        return R"({"success":false,"error":"no api"})";
+
+    LogosAPIClient* client = logosAPI->getClient("delivery_module");
+    if (!client)
+        return R"({"success":false,"error":"no delivery client"})";
+
+    contentTopic_ = contentTopic;
+
+    // createNode — may return false if already initialized by platform; continue
+    // SCORCHED_TCP_PORT env var allows a second local instance to use a different port (default 60000)
+    int tcpPort = 60000;
+    if (const char* envPort = qgetenv("SCORCHED_TCP_PORT").constData(); envPort && envPort[0])
+        tcpPort = QString(envPort).toInt();
+    QString cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1})").arg(tcpPort);
+    QVariant r1 = client->invokeRemoteMethod("delivery_module", "createNode", cfg);
+    qDebug() << "ScorchedEarthPlugin::enableMultiplayer createNode:" << r1;
+
+    // start — may fail on port conflict (second instance); continue
+    client->invokeRemoteMethod("delivery_module", "start", QVariantList{});
+
+    // subscribe to room content topic
+    QVariant r3 = client->invokeRemoteMethod("delivery_module", "subscribe", contentTopic_);
+    qDebug() << "ScorchedEarthPlugin::enableMultiplayer subscribe:" << r3;
+
+    // Wire delivery_module messageReceived → scorched_earth p2pMessage
+    if (deliveryObject_) {
+        deliveryObject_->disconnectEvents();
+        deliveryObject_->release();
+        deliveryObject_ = nullptr;
+    }
+    LogosObject* obj = client->requestObject("delivery_module");
+    if (obj) {
+        deliveryObject_ = obj;
+        obj->onEvent("messageReceived", [this](const QString& /*evName*/, const QVariantList& data) {
+            qDebug() << "ScorchedEarthPlugin: delivery messageReceived, forwarding as p2pMessage";
+            if (!logosAPI || data.size() < 3) return;
+            auto* myClient = logosAPI->getClient("scorched_earth");
+            if (myClient)
+                myClient->onEventResponse(this, "p2pMessage", {data[2]});
+        });
+    } else {
+        qWarning() << "ScorchedEarthPlugin::enableMultiplayer: requestObject(delivery_module) returned null";
+    }
+
+    return R"({"success":true})";
+}
+
+QString ScorchedEarthPlugin::sendP2PMsg(const QString& jsonPayload)
+{
+    if (!logosAPI || contentTopic_.isEmpty())
+        return R"({"success":false,"error":"not initialized"})";
+    LogosAPIClient* client = logosAPI->getClient("delivery_module");
+    if (!client)
+        return R"({"success":false,"error":"no delivery client"})";
+    QVariant r = client->invokeRemoteMethod("delivery_module", "send", contentTopic_, jsonPayload);
+    qDebug() << "ScorchedEarthPlugin::sendP2PMsg result:" << r;
+    return r.isValid() ? r.toString() : R"({"success":false,"error":"send failed"})";
 }

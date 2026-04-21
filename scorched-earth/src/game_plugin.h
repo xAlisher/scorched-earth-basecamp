@@ -6,6 +6,7 @@
 #include "physics.h"
 #include "logos_api.h"
 #include "logos_api_client.h"
+#include "logos_object.h"
 
 struct Tank {
     int x = 0;
@@ -21,7 +22,7 @@ class ScorchedEarthPlugin : public QObject, public ScorchedEarthInterface
 
 public:
     ScorchedEarthPlugin();
-    ~ScorchedEarthPlugin() override = default;
+    ~ScorchedEarthPlugin() override;
 
     Q_INVOKABLE QString newGame(int cols, int rows, int windForce) override;
     Q_INVOKABLE QString getState() override;
@@ -29,6 +30,8 @@ public:
     Q_INVOKABLE QString processShot(int tankId, double angle, double power) override;
     Q_INVOKABLE int     gameStatus() override;
     Q_INVOKABLE int     activePlayer() override;
+    Q_INVOKABLE QString enableMultiplayer(const QString& contentTopic) override;
+    Q_INVOKABLE QString sendP2PMsg(const QString& jsonPayload) override;
 
     QString name()    const override { return "scorched_earth"; }
     QString version() const override { return "0.1.0"; }
@@ -47,4 +50,7 @@ private:
 
     QString buildState() const;
     void snapTankY(int idx);
+
+    LogosObject* deliveryObject_ = nullptr;
+    QString      contentTopic_;
 };

@@ -5,7 +5,7 @@
   "category": "game",
   "description": "Scorched Earth — turn-based artillery game",
   "main": "scorched_earth_plugin",
-  "dependencies": [],
+  "dependencies": ["delivery_module"],
   "nix": {
     "packages": {
       "build": [],

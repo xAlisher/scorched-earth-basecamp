@@ -11,6 +11,14 @@ Rectangle {
     color:  "#0d0d0d"
     focus:  true
 
+    // Register scorched_earth p2pMessage event at load time.
+    Component.onCompleted: {
+        // qmllint disable unqualified
+        if (typeof logos !== "undefined")
+            logos.onModuleEvent("scorched_earth", "p2pMessage")
+        // qmllint enable unqualified
+    }
+
     // ── palette ──────────────────────────────────────────────────────────────
     readonly property string colBg:      "#0d0d0d"
     readonly property string colSurface: "#111111"
@@ -46,6 +54,7 @@ Rectangle {
     property string roomId:        ""
     property bool   peerConnected: false
     property int    netSeq:        0
+    property string myPeerId:     Math.random().toString(36).substr(2, 9)
     property var    sentSeqs:      ({})   // seq->true, self-echo filter
 
     // ── UI phase ─────────────────────────────────────────────────────────────
@@ -100,32 +109,33 @@ Rectangle {
     function sendMsg(obj) {
         root.netSeq += 1
         obj.seq = root.netSeq
+        obj.pid = root.myPeerId
         root.sentSeqs[obj.seq] = true
         // qmllint disable unqualified
-        logos.callModule("delivery_module", "send",
-            [root.contentTopic, JSON.stringify(obj)])
+        logos.callModule("scorched_earth", "sendP2PMsg", [JSON.stringify(obj)])
         // qmllint enable unqualified
     }
 
     // ── P2P init timer ────────────────────────────────────────────────────────
-    // Wraps delivery_module init in Timer so callModule runs outside direct handler
+    // Delegates delivery_module lifecycle to scorched_earth C++ core.
     Timer {
         id: p2pInitTimer
         repeat:     false
         interval:   1
         onTriggered: {
+            console.log("[SE-P2P] p2pInitTimer fired, topic=" + root.contentTopic)
             // qmllint disable unqualified
-            logos.callModule("delivery_module", "createNode",
-                ['{"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true}'])
-            logos.callModule("delivery_module", "start", [])
-            logos.callModule("delivery_module", "subscribe", [root.contentTopic])
-            logos.onModuleEvent("delivery_module", "messageReceived")
+            var r = logos.callModule("scorched_earth", "enableMultiplayer",
+                [root.contentTopic])
+            console.log("[SE-P2P] enableMultiplayer result=" + r)
+            logos.onModuleEvent("scorched_earth", "p2pMessage")
             // qmllint enable unqualified
             root.multiplayerOn = true
             root.pollBusy = false
-            // Joiner announces presence immediately after init
+            // Joiner announces presence immediately after init, then retries every 3s
             if (root.p2pPhase === "joining") {
                 root.sendMsg({ t: "join" })
+                joinRetryTimer.start()
             }
         }
     }
@@ -171,6 +181,7 @@ Rectangle {
             if (root._pendingStart) {
                 var s = root._pendingStart
                 root._pendingStart = null
+                joinRetryTimer.stop()
                 root.peerConnected = true
                 root.syncState(s.state)
                 root.uiPhase       = "playing"
@@ -187,27 +198,63 @@ Rectangle {
         }
     }
 
-    // ── delivery_module event receiver ────────────────────────────────────────
+    // ── join retry timer (guest resends join every 3s until peer responds) ────
+    Timer {
+        id: joinRetryTimer
+        repeat:   true
+        interval: 3000
+        onTriggered: {
+            if (root.multiplayerOn && root.p2pPhase === "joining" && !root.peerConnected) {
+                console.log("[SE-P2P] join retry")
+                root.sendMsg({ t: "join" })
+            } else {
+                joinRetryTimer.stop()
+            }
+        }
+    }
+
+    // ── scorched_earth p2p event receiver ─────────────────────────────────────
+    // scorched_earth C++ core forwards delivery_module messages as "p2pMessage"
+    // with data[0] = base64(JSON payload).
     Connections {
         target: typeof logos !== "undefined" ? logos : null
         function onModuleEventReceived(moduleName, eventName, data) {
-            if (moduleName !== "delivery_module") return
-            if (eventName !== "messageReceived") return
+            console.log("[SE-P2P] event mod=" + moduleName + " ev=" + eventName)
+            if (moduleName !== "scorched_earth") return
+            if (eventName !== "p2pMessage") return
             try {
-                var msg = JSON.parse(Qt.atob(data[2]))
-                if (root.sentSeqs[msg.seq]) return   // self-echo filter
+                console.log("[SE-P2P] data[0]=" + (data ? data[0] : "null"))
+                var msg = JSON.parse(Qt.atob(data[0]))
+                console.log("[SE-P2P] msg.t=" + msg.t + " seq=" + msg.seq + " pid=" + msg.pid + " myPid=" + root.myPeerId)
+                if (root.sentSeqs[msg.seq] && msg.pid === root.myPeerId) {
+                    console.log("[SE-P2P] self-echo drop seq=" + msg.seq)
+                    return
+                }
                 if (msg.t === "shot") {
                     root._pendingShot = msg
                     shotApplyTimer.start()
                 } else if (msg.t === "join") {
-                    // Creator: peer joined → init game and broadcast
-                    if (root.myRole === 1) joinHandlerTimer.start()
+                    if (root.myRole === 1) {
+                        // Re-send start even if already playing (handles guest retry)
+                        if (root.uiPhase === "playing") {
+                            root.sendMsg({ t: "start", state: {
+                                terrain:      root.terrain.slice(),
+                                tanks:        root.tanks.slice(),
+                                activePlayer: root.activePlayer,
+                                turnSeq:      root.turnSeq
+                            }})
+                        } else {
+                            joinHandlerTimer.start()
+                        }
+                    }
                 } else if (msg.t === "start") {
                     // Joiner: received game state → enter game
                     root._pendingStart = msg
                     startHandlerTimer.start()
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.log("[SE-P2P] event parse error: " + e)
+            }
         }
     }
 
@@ -624,6 +671,7 @@ Rectangle {
                             root.myRole   = 1
                             root.roomId   = root.randomRoomId()
                             root.p2pPhase = "creating"
+                            console.log("[SE-P2P] CREATE clicked, roomId=" + root.roomId)
                             root.enableMultiplayer(
                                 "/scorched-earth/1/room-" + root.roomId + "/json")
                         }

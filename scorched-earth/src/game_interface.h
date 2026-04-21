@@ -27,6 +27,13 @@ public:
     // Active player: 1 or 2
     Q_INVOKABLE virtual int activePlayer() = 0;
 
+    // P2P multiplayer: initialize delivery_module and subscribe to contentTopic.
+    // Returns {"success":true} or {"success":false,"error":"..."}.
+    Q_INVOKABLE virtual QString enableMultiplayer(const QString& contentTopic) = 0;
+
+    // P2P multiplayer: send a JSON payload to the current content topic.
+    Q_INVOKABLE virtual QString sendP2PMsg(const QString& jsonPayload) = 0;
+
 signals:
     void eventResponse(const QString& name, const QVariantList& data);
 };
