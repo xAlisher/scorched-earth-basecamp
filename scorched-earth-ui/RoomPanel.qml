@@ -1,14 +1,17 @@
 import QtQuick 2.15
-import QtQuick.Layouts 1.15
 
-// Turn log strip — shows last 8 turns, newest on the left.
+// Bottom strip: turn log (hotseat) or P2P status + turn log (multiplayer).
 Rectangle {
     id: panel
-    width: parent ? parent.width : 960
+    width:  parent ? parent.width : 960
     height: 100
-    color: "#0a0a0a"
+    color:  "#0a0a0a"
 
-    property var turnLog: []
+    property var    turnLog:       []
+    property bool   multiplayerOn: false
+    property string roomId:        ""
+    property bool   peerConnected: false
+    property int    myRole:        0    // 0=hotseat 1=P1 2=P2
 
     // ── palette ──────────────────────────────────────────────────────────────
     readonly property string colP1:     "#ffdd00"
@@ -19,28 +22,91 @@ Rectangle {
 
     // top border
     Rectangle {
-        anchors.top:   parent.top
-        width:         parent.width
-        height:        1
-        color:         panel.colBorder
+        anchors.top:  parent.top
+        width:        parent.width
+        height:       1
+        color:        panel.colBorder
     }
 
-    // header
-    Text {
-        id: header
+    // ── header row ────────────────────────────────────────────────────────────
+    Row {
+        id: headerRow
         x: 8; y: 6
-        text: "TURN LOG"
-        color: panel.colMuted
-        font.pixelSize: 10
-        font.family: "monospace"
-        font.bold: true
-        font.letterSpacing: 2
+        spacing: 16
+
+        Text {
+            text:  "TURN LOG"
+            color: panel.colMuted
+            font.pixelSize:   10
+            font.family:      "monospace"
+            font.bold:        true
+            font.letterSpacing: 2
+        }
+
+        // P2P status badge (shown only in P2P mode)
+        Row {
+            spacing: 6
+            visible: panel.multiplayerOn
+
+            Text {
+                text:  "│"
+                color: panel.colBorder
+                font.pixelSize: 10
+                font.family:    "monospace"
+            }
+
+            Text {
+                text:  "P2P"
+                color: panel.colP1
+                font.pixelSize: 10
+                font.family:    "monospace"
+                font.bold:      true
+            }
+
+            Text {
+                text:  "ROOM:" + panel.roomId
+                color: panel.colAccent
+                font.pixelSize: 10
+                font.family:    "monospace"
+                font.bold:      true
+                font.letterSpacing: 1
+            }
+
+            Text {
+                text:  "│"
+                color: panel.colBorder
+                font.pixelSize: 10
+                font.family:    "monospace"
+            }
+
+            Text {
+                text:  panel.peerConnected ? "● CONNECTED" : "○ WAITING"
+                color: panel.peerConnected ? panel.colAccent : panel.colMuted
+                font.pixelSize: 10
+                font.family:    "monospace"
+            }
+
+            Text {
+                text:  "│"
+                color: panel.colBorder
+                font.pixelSize: 10
+                font.family:    "monospace"
+            }
+
+            Text {
+                text:  panel.myRole === 1 ? "YOU: P1" : "YOU: P2"
+                color: panel.myRole === 1 ? panel.colP1 : panel.colP2
+                font.pixelSize: 10
+                font.family:    "monospace"
+                font.bold:      true
+            }
+        }
     }
 
-    // entries row
+    // ── turn log cards ────────────────────────────────────────────────────────
     Row {
         x: 8
-        y: header.height + 10
+        y: headerRow.height + 10
         spacing: 12
 
         Repeater {
@@ -55,37 +121,34 @@ Rectangle {
                 radius: 2
 
                 Column {
-                    anchors.fill: parent
+                    anchors.fill:    parent
                     anchors.margins: 6
                     spacing: 3
 
-                    // T# P#
                     Row {
                         spacing: 6
                         Text {
-                            text: "T" + panel.turnLog[index].turn
+                            text:  "T" + panel.turnLog[index].turn
                             color: panel.colMuted
                             font.pixelSize: 10
-                            font.family: "monospace"
+                            font.family:    "monospace"
                         }
                         Text {
-                            text: "P" + panel.turnLog[index].player
+                            text:  "P" + panel.turnLog[index].player
                             color: panel.turnLog[index].player === 1 ? panel.colP1 : panel.colP2
                             font.pixelSize: 10
-                            font.family: "monospace"
-                            font.bold: true
+                            font.family:    "monospace"
+                            font.bold:      true
                         }
                     }
 
-                    // angle / power
                     Text {
-                        text: panel.turnLog[index].angle + "° " + panel.turnLog[index].power + "pw"
+                        text:  panel.turnLog[index].angle + "° " + panel.turnLog[index].power + "pw"
                         color: "#888888"
                         font.pixelSize: 10
-                        font.family: "monospace"
+                        font.family:    "monospace"
                     }
 
-                    // outcome
                     Text {
                         text: panel.turnLog[index].outcome
                         color: {
@@ -95,8 +158,8 @@ Rectangle {
                             return panel.colAccent
                         }
                         font.pixelSize: 10
-                        font.family: "monospace"
-                        font.bold: panel.turnLog[index].outcome !== "miss"
+                        font.family:    "monospace"
+                        font.bold:      panel.turnLog[index].outcome !== "miss"
                     }
                 }
             }
