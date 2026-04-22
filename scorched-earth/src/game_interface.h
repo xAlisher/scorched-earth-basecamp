@@ -15,17 +15,17 @@ public:
     // Full game state as JSON.
     Q_INVOKABLE virtual QString getState() = 0;
 
-    // Move tank left (-1) or right (+1) by one block. Returns new x position.
-    Q_INVOKABLE virtual int moveTank(int tankId, int direction) = 0;
+    // Move tank left (-1) or right (+1) by one block. Returns {"x":<newX>}.
+    Q_INVOKABLE virtual QString moveTank(int tankId, int direction) = 0;
 
     // Fire shot. Returns JSON: {hit, tankId, removedBlocks, seq, status}
     Q_INVOKABLE virtual QString processShot(int tankId, double angle, double power) = 0;
 
-    // 0=ongoing, 1=p1wins, 2=p2wins
-    Q_INVOKABLE virtual int gameStatus() = 0;
+    // Returns {"status":<0=ongoing,1=p1wins,2=p2wins>}
+    Q_INVOKABLE virtual QString gameStatus() = 0;
 
-    // Active player: 1 or 2
-    Q_INVOKABLE virtual int activePlayer() = 0;
+    // Returns {"player":<1|2>}
+    Q_INVOKABLE virtual QString activePlayer() = 0;
 
     // P2P multiplayer: initialize delivery_module and subscribe to contentTopic.
     // Returns {"success":true} or {"success":false,"error":"..."}.

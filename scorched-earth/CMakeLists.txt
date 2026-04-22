@@ -19,4 +19,7 @@ logos_module(
         src/terrain.cpp
         src/physics.h
         src/physics.cpp
+    INCLUDE_DIRS
+        src
+        src/generated
 )

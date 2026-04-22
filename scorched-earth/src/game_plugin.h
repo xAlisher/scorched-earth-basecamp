@@ -1,12 +1,14 @@
 #pragma once
 
 #include <QtCore/QObject>
+#include <QThread>
 #include "game_interface.h"
 #include "terrain.h"
 #include "physics.h"
 #include "logos_api.h"
 #include "logos_api_client.h"
 #include "logos_object.h"
+#include "delivery_module_api.h"
 
 struct Tank {
     int x = 0;
@@ -26,10 +28,10 @@ public:
 
     Q_INVOKABLE QString newGame(int cols, int rows, int windForce) override;
     Q_INVOKABLE QString getState() override;
-    Q_INVOKABLE int     moveTank(int tankId, int direction) override;
+    Q_INVOKABLE QString moveTank(int tankId, int direction) override;
     Q_INVOKABLE QString processShot(int tankId, double angle, double power) override;
-    Q_INVOKABLE int     gameStatus() override;
-    Q_INVOKABLE int     activePlayer() override;
+    Q_INVOKABLE QString gameStatus() override;
+    Q_INVOKABLE QString activePlayer() override;
     Q_INVOKABLE QString enableMultiplayer(const QString& contentTopic) override;
     Q_INVOKABLE QString sendP2PMsg(const QString& jsonPayload) override;
 
@@ -51,6 +53,9 @@ private:
     QString buildState() const;
     void snapTankY(int idx);
 
-    LogosObject* deliveryObject_ = nullptr;
-    QString      contentTopic_;
+    void doMultiplayerSetup();
+    void emitP2PStatus(const QString& status);
+
+    DeliveryModule* delivery_   = nullptr;
+    QString         contentTopic_;
 };
