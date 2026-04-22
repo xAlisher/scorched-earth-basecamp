@@ -247,12 +247,16 @@ void ScorchedEarthPlugin::doMultiplayerSetup()
     int requestedPort = envPort.isEmpty() ? 60000 : envPort.toInt();
     bool isFirstNode  = (requestedPort == 60000);
 
+    // UDP port for discv5: derive from TCP port offset to avoid collisions between instances
+    int udpPort = 9000 + (requestedPort - 60000);
+
     QString cfg;
     if (isFirstNode) {
-        cfg = R"({"logLevel":"DEBUG","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":60000,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"})";
+        cfg = QString(R"({"logLevel":"DEBUG","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":60000,"udpPort":%1,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"})")
+                  .arg(udpPort);
     } else {
-        cfg = QString(R"({"logLevel":"DEBUG","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1,"staticNodes":["/ip4/127.0.0.1/tcp/60000/p2p/16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP"]})")
-                  .arg(requestedPort);
+        cfg = QString(R"({"logLevel":"DEBUG","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1,"udpPort":%2,"staticNodes":["/ip4/127.0.0.1/tcp/60000/p2p/16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP"]})")
+                  .arg(requestedPort).arg(udpPort);
     }
 
     LogosResult r1 = delivery_->createNode(cfg);
