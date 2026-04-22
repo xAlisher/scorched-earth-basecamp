@@ -271,10 +271,10 @@ void ScorchedEarthPlugin::doMultiplayerSetup()
     if (!r3.success) { emitP2PStatus("Error subscribe: " + r3.getError()); return; }
 
     // Wire events via typed API
-    delivery_->on("messageReceived", [this](const QVariantList& data) {
-        if (!logosAPI || data.size() < 3) return;
+    delivery_->on("message", [this](const QVariantList& data) {
+        if (!logosAPI || data.size() < 2) return;
         if (auto* c = logosAPI->getClient("scorched_earth"))
-            c->onEventResponse(this, "p2pMessage", {data[2]});
+            c->onEventResponse(this, "p2pMessage", {data[1]});
     });
     delivery_->on("connectionStateChanged", [this](const QVariantList& data) {
         QString status = data.size() > 0 ? data[0].toString() : QString();
