@@ -3,6 +3,7 @@
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
+    nixpkgs.follows = "logos-module-builder/nixpkgs";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
