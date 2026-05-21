@@ -1,14 +1,12 @@
 #pragma once
 
 #include <QtCore/QObject>
-#include <QThread>
 #include "game_interface.h"
 #include "terrain.h"
 #include "physics.h"
 #include "logos_api.h"
 #include "logos_api_client.h"
 #include "logos_object.h"
-#include "delivery_module_api.h"
 
 struct Tank {
     int x = 0;
@@ -24,7 +22,7 @@ class ScorchedEarthPlugin : public QObject, public ScorchedEarthInterface
 
 public:
     ScorchedEarthPlugin();
-    ~ScorchedEarthPlugin() override;
+    ~ScorchedEarthPlugin() override = default;
 
     Q_INVOKABLE QString newGame(int cols, int rows, int windForce) override;
     Q_INVOKABLE QString getState() override;
@@ -34,6 +32,7 @@ public:
     Q_INVOKABLE QString activePlayer() override;
     Q_INVOKABLE QString enableMultiplayer(const QString& contentTopic) override;
     Q_INVOKABLE QString sendP2PMsg(const QString& jsonPayload) override;
+    Q_INVOKABLE QString loadState(const QString& json) override;
 
     QString name()    const override { return "scorched_earth"; }
     QString version() const override { return "0.1.0"; }
@@ -48,14 +47,14 @@ private:
     Tank tanks_[2];
     int activePlayer_ = 1;
     int turnSeq_      = 0;
-    int status_       = 0;   // 0=ongoing, 1=p1wins, 2=p2wins
+    int status_       = 0;
 
     QString buildState() const;
     void snapTankY(int idx);
 
-    void doMultiplayerSetup();
-    void emitP2PStatus(const QString& status);
-
-    DeliveryModule* delivery_   = nullptr;
+    // P2P — tictactoe pattern
+    LogosAPIClient* deliveryClient_ = nullptr;
+    LogosObject*    deliveryObject_ = nullptr;
+    bool            mpEnabled_      = false;
     QString         contentTopic_;
 };

@@ -11,11 +11,13 @@ Rectangle {
     color:  "#0d0d0d"
     focus:  true
 
-    // Register scorched_earth p2pMessage event at load time.
+    // Register scorched_earth events at load time.
     Component.onCompleted: {
         // qmllint disable unqualified
-        if (typeof logos !== "undefined")
+        if (typeof logos !== "undefined") {
             logos.onModuleEvent("scorched_earth", "p2pMessage")
+            logos.onModuleEvent("scorched_earth", "p2pStatus")
+        }
         // qmllint enable unqualified
     }
 
@@ -49,13 +51,13 @@ Rectangle {
     // ── P2P state ────────────────────────────────────────────────────────────
     property int    myRole:        0      // 0=hotseat 1=P1(creator) 2=P2(joiner)
     property bool   multiplayerOn: false
-    property bool   pollBusy:      false
     property string contentTopic:  ""
     property string roomId:        ""
     property bool   peerConnected: false
     property int    netSeq:        0
     property string myPeerId:     Math.random().toString(36).substr(2, 9)
     property var    sentSeqs:      ({})   // seq->true, self-echo filter
+    property string nodeStatus:   ""     // Waku connection state from p2pStatus event
 
     // ── UI phase ─────────────────────────────────────────────────────────────
     property string uiPhase:      "modePicker"  // "modePicker"|"p2pSetup"|"playing"
@@ -75,8 +77,9 @@ Rectangle {
     readonly property bool myTurn: gamePhase === 1 && (myRole === 0 || activePlayer === myRole)
 
     // pending P2P message payloads (deferred to avoid callModule inside event cb)
-    property var _pendingShot:  null
-    property var _pendingStart: null
+    property var _pendingShot:    null
+    property var _pendingStart:   null
+    property var _outgoingShot:   null   // shot to send after animation completes
 
     // ── helpers ──────────────────────────────────────────────────────────────
     function callModuleParse(raw) {
@@ -117,26 +120,21 @@ Rectangle {
     }
 
     // ── P2P init timer ────────────────────────────────────────────────────────
-    // Delegates delivery_module lifecycle to scorched_earth C++ core.
     Timer {
         id: p2pInitTimer
-        repeat:     false
-        interval:   1
+        repeat:   false
+        interval: 1
         onTriggered: {
-            console.log("[SE-P2P] p2pInitTimer fired, topic=" + root.contentTopic)
+            console.log("[SE-P2P] init topic=" + root.contentTopic)
+            root.nodeStatus = "Connecting..."
             // qmllint disable unqualified
-            var r = logos.callModule("scorched_earth", "enableMultiplayer",
-                [root.contentTopic])
-            console.log("[SE-P2P] enableMultiplayer result=" + r)
+            logos.callModule("scorched_earth", "enableMultiplayer", [root.contentTopic])
             logos.onModuleEvent("scorched_earth", "p2pMessage")
+            logos.onModuleEvent("scorched_earth", "p2pStatus")
             // qmllint enable unqualified
             root.multiplayerOn = true
-            root.pollBusy = false
-            // Joiner announces presence immediately after init, then retries every 3s
-            if (root.p2pPhase === "joining") {
-                root.sendMsg({ t: "join" })
-                joinRetryTimer.start()
-            }
+            // joinRetryTimer starts from p2pStatus "Connected" handler (GUEST)
+            // or from joinHandlerTimer (HOST) after peer joins
         }
     }
 
@@ -144,13 +142,13 @@ Rectangle {
     Timer {
         id: shotApplyTimer
         repeat:     false
-        interval:   1
+        interval:   100
         onTriggered: {
-            if (root._pendingShot && root.gamePhase === 1) {
-                var m = root._pendingShot
-                root._pendingShot = null
-                root.applyShot(m.tankId, m.physAngle, m.power, m.userAngle)
-            }
+            if (!root._pendingShot) return
+            if (root.gamePhase !== 1) { shotApplyTimer.start(); return }  // still animating, retry
+            var m = root._pendingShot
+            root._pendingShot = null
+            root.applyReceivedShot(m.i, m.pa, m.pw, m.ua, m.pp, m.result)
         }
     }
 
@@ -160,6 +158,7 @@ Rectangle {
         repeat:     false
         interval:   1
         onTriggered: {
+            joinRetryTimer.stop()    // stop any pending retries on both sides
             root.peerConnected = true
             root.uiPhase = "playing"
             root.initGame()
@@ -178,11 +177,15 @@ Rectangle {
         repeat:     false
         interval:   1
         onTriggered: {
-            if (root._pendingStart) {
+            if (root._pendingStart && !root.peerConnected) {
                 var s = root._pendingStart
                 root._pendingStart = null
                 joinRetryTimer.stop()
                 root.peerConnected = true
+                // Initialize GUEST's C++ state from received snapshot
+                // qmllint disable unqualified
+                logos.callModule("scorched_earth", "loadState", [JSON.stringify(s.state)])
+                // qmllint enable unqualified
                 root.syncState(s.state)
                 root.uiPhase       = "playing"
                 root.ghostArcPts   = []
@@ -198,11 +201,11 @@ Rectangle {
         }
     }
 
-    // ── join retry timer (guest resends join every 3s until peer responds) ────
+    // ── join retry timer (guest resends join every 500ms until peer responds) ────
     Timer {
         id: joinRetryTimer
         repeat:   true
-        interval: 3000
+        interval: 500
         onTriggered: {
             if (root.multiplayerOn && root.p2pPhase === "joining" && !root.peerConnected) {
                 console.log("[SE-P2P] join retry")
@@ -213,6 +216,28 @@ Rectangle {
         }
     }
 
+    // ── deferred re-send of start to late-joining guest (avoids callModule inside event cb) ─
+    Timer {
+        id: resendStartTimer
+        repeat:   false
+        interval: 1
+        onTriggered: {
+            // Only resend while peer hasn't connected yet — stops the flood of
+            // resend-starts once GUEST is already in game.
+            if (root.myRole === 1 && root.uiPhase === "playing" && !root.peerConnected) {
+                // qmllint disable unqualified
+                root.sendMsg({ t: "start", state: {
+                    terrain:      root.terrain.slice(),
+                    tanks:        root.tanks.slice(),
+                    activePlayer: root.activePlayer,
+                    turnSeq:      root.turnSeq
+                }})
+                // qmllint enable unqualified
+            }
+        }
+    }
+
+
     // ── scorched_earth p2p event receiver ─────────────────────────────────────
     // scorched_earth C++ core forwards delivery_module messages as "p2pMessage"
     // with data[0] = base64(JSON payload).
@@ -221,28 +246,49 @@ Rectangle {
         function onModuleEventReceived(moduleName, eventName, data) {
             console.log("[SE-P2P] event mod=" + moduleName + " ev=" + eventName)
             if (moduleName !== "scorched_earth") return
+            if (eventName === "p2pStatus") {
+                console.log("[SE-P2P] p2pStatus raw data=" + JSON.stringify(data) + " data[0]=" + data[0] + " typeof=" + typeof data)
+                var s = (data && data[0]) ? data[0] : (typeof data === "string" ? data : "")
+                root.nodeStatus = s
+                console.log("[SE-P2P] nodeStatus=" + root.nodeStatus)
+                // Only trigger join on the normalized "Connected" emitted by C++ after
+                // connectionStateChanged fires — not on intermediate "Connecting..." strings.
+                var isConnected = s === "Connected"
+                if (isConnected && root.p2pPhase === "joining" && !root.peerConnected) {
+                    // Do NOT call sendMsg here — logos.callModule inside an event handler
+                    // causes QML thread reentrancy that breaks subsequent event delivery.
+                    // Let joinRetryTimer fire and send the first join outside the handler.
+                    joinRetryTimer.start()
+                }
+                return
+            }
             if (eventName !== "p2pMessage") return
             try {
                 console.log("[SE-P2P] data[0]=" + (data ? data[0] : "null"))
-                var msg = JSON.parse(Qt.atob(data[0]))
+                var raw = data[0]
+                var msgStr = raw
+                try { msgStr = Qt.atob(raw) } catch(e) {}
+                var msg = JSON.parse(msgStr)
                 console.log("[SE-P2P] msg.t=" + msg.t + " seq=" + msg.seq + " pid=" + msg.pid + " myPid=" + root.myPeerId)
                 if (root.sentSeqs[msg.seq] && msg.pid === root.myPeerId) {
                     console.log("[SE-P2P] self-echo drop seq=" + msg.seq)
                     return
                 }
-                if (msg.t === "shot") {
+                if (msg.t === "s") {
+                    // Dedup: drop if gameTurnSeq was already applied
+                    if (msg.gts !== undefined && msg.gts < root.turnSeq) {
+                        console.log("[SE-P2P] dup shot drop gts=" + msg.gts + " myTurnSeq=" + root.turnSeq)
+                        return
+                    }
                     root._pendingShot = msg
                     shotApplyTimer.start()
                 } else if (msg.t === "join") {
                     if (root.myRole === 1) {
-                        // Re-send start even if already playing (handles guest retry)
+                        // Re-send start even if already playing (handles guest retry).
+                        // Use deferred timers — never call sendMsg inside an event handler
+                        // (logos.callModule reentrancy breaks p2pMessage event delivery).
                         if (root.uiPhase === "playing") {
-                            root.sendMsg({ t: "start", state: {
-                                terrain:      root.terrain.slice(),
-                                tanks:        root.tanks.slice(),
-                                activePlayer: root.activePlayer,
-                                turnSeq:      root.turnSeq
-                            }})
+                            resendStartTimer.start()
                         } else {
                             joinHandlerTimer.start()
                         }
@@ -259,8 +305,7 @@ Rectangle {
     }
 
     function enableMultiplayer(topic) {
-        if (root.pollBusy) return
-        root.pollBusy = true
+        if (root.multiplayerOn) return   // guard — C++ mpEnabled_ handles double-init
         root.contentTopic = topic
         p2pInitTimer.start()
     }
@@ -293,7 +338,7 @@ Rectangle {
     }
 
     // ── shot execution ────────────────────────────────────────────────────────
-    // Shared by local fire and P2P receive.  Computes QML arc + calls processShot.
+    // Local shot: computes QML arc + calls processShot C++.
     function applyShot(tankId, physAngle, power, userAngle) {
         var tankIdx = tankId - 1
         if (tankIdx < 0 || tankIdx >= root.tanks.length) return
@@ -341,6 +386,47 @@ Rectangle {
         root.gamePhase     = 2   // GameCanvas timer starts AFTER processShot returns
     }
 
+    // Received shot: animate using peer's physics params; apply bundled result in onAnimationComplete.
+    // No processShot / loadState IPC calls — no blocking.
+    function applyReceivedShot(tankId, physAngle, power, userAngle, prePos, result) {
+        var tankIdx = tankId - 1
+        if (tankIdx < 0 || tankIdx >= root.tanks.length) return
+
+        // 1. Apply shooter's position FIRST — correct starting point for trajectory
+        if (prePos) {
+            var pt = root.tanks.slice()
+            pt[tankIdx] = Object.assign({}, pt[tankIdx], { x: prePos.x, y: prePos.y })
+            root.tanks = pt
+        }
+
+        var tank = root.tanks[tankIdx]
+        root.ghostArcPts = root.trajectoryPts.slice()
+
+        var pts = []
+        var rad = physAngle * Math.PI / 180.0
+        var vx = Math.cos(rad) * power * 0.15
+        var vy = -Math.sin(rad) * power * 0.15
+        var px = tank.x + 24, py = tank.y
+        var BS = 48, COLS = 20, ROWS = 10
+        var startCol = Math.floor(px / BS)
+        var startRow = Math.floor(py / BS)
+        var leftStart = false
+        while (px >= 0 && px < 960 && py < 480) {
+            pts.push({ x: px, y: py })
+            var tcol = Math.floor(px / BS)
+            var trow = Math.floor(py / BS)
+            if (!leftStart) { if (tcol !== startCol || trow !== startRow) leftStart = true }
+            if (leftStart && tcol >= 0 && tcol < COLS && trow >= 0 && trow < ROWS && root.terrain[trow * COLS + tcol])
+                break
+            px += vx; py += vy; vy += 0.3
+        }
+        root.lastShot = { player: tankId, angle: Math.round(userAngle), power: Math.round(power),
+                          result: result, _received: true }
+        root.trajectoryPts = pts
+        root.animFrame     = 0
+        root.gamePhase     = 2
+    }
+
     // ── fire handler ─────────────────────────────────────────────────────────
     function onFire() {
         if (!root.myTurn || root.gamePhase !== 1) return
@@ -348,11 +434,14 @@ Rectangle {
         var physAngle = 90.0 - aimCtrl.aimAngle
         var power     = aimCtrl.aimPower
         var userAngle = aimCtrl.aimAngle
-        applyShot(tankId, physAngle, power, userAngle)
         if (root.multiplayerOn) {
-            root.sendMsg({ t: "shot", tankId: tankId, physAngle: physAngle,
-                           power: power, userAngle: userAngle })
+            var me = root.tanks[tankId - 1]
+            root._outgoingShot = { t: "s", i: tankId, pa: physAngle,
+                                   pw: power, ua: userAngle,
+                                   gts: root.turnSeq,
+                                   pp: { x: me.x, y: me.y } }
         }
+        applyShot(tankId, physAngle, power, userAngle)
     }
 
     // ── animation-complete handler ────────────────────────────────────────────
@@ -367,12 +456,70 @@ Rectangle {
         saved[prevIdx] = { angle: aimCtrl.aimAngle, power: aimCtrl.aimPower }
         root.playerAim = saved
 
-        // refresh full state from C++ (terrain + hp + activePlayer all updated)
-        // qmllint disable unqualified
-        var raw   = logos.callModule("scorched_earth", "getState", [])
-        // qmllint enable unqualified
-        var state = root.callModuleParse(raw)
-        root.syncState(state)
+        var shotPayloadResult = null
+
+        if (root.lastShot && root.lastShot._received) {
+            // ── GUEST: apply bundled result — no IPC before this point ──
+            var rr = root.lastShot.result
+            if (rr) {
+                var terrainChanged = rr.bc >= 0 && rr.br >= 0
+                // 1. Remove destroyed block
+                if (terrainChanged) {
+                    var newT = root.terrain.slice()
+                    newT[rr.br * 20 + rr.bc] = false
+                    root.terrain = newT
+                }
+                // 2. HP only — keep each player's own x/y (prePos handled position)
+                var myIdx = root.myRole - 1
+                var ut = root.tanks.slice()
+                if (rr.hp) {
+                    ut[0] = Object.assign({}, ut[0], { hp: rr.hp[0] })
+                    ut[1] = Object.assign({}, ut[1], { hp: rr.hp[1] })
+                }
+                // 3. If my floor was destroyed, recalculate my y
+                if (terrainChanged) {
+                    var myCol = Math.floor(ut[myIdx].x / 48)
+                    if (myCol === rr.bc && Math.floor(ut[myIdx].y / 48) === rr.br) {
+                        var sr = rr.br + 1
+                        while (sr < 10 && !root.terrain[sr * 20 + myCol]) sr++
+                        ut[myIdx] = Object.assign({}, ut[myIdx], sr < 10 ? { y: sr * 48 } : { hp: 0 })
+                    }
+                }
+                root.tanks = ut
+                if (rr.ap !== undefined) root.activePlayer = rr.ap
+                root.turnSeq    = rr.ts !== undefined ? rr.ts : root.turnSeq
+                root.gameStatus = rr.st !== undefined ? rr.st : root.gameStatus
+                // 4. Sync C++ only if terrain changed (needed for moveTank collision)
+                if (terrainChanged) {
+                    // qmllint disable unqualified
+                    logos.callModule("scorched_earth", "loadState", [JSON.stringify({
+                        terrain: root.terrain, tanks: root.tanks,
+                        activePlayer: root.activePlayer, turnSeq: root.turnSeq, status: root.gameStatus
+                    })])
+                    // qmllint enable unqualified
+                }
+            }
+        } else {
+            // ── HOST (local shot): authoritative state from C++ ──
+            // qmllint disable unqualified
+            var raw   = logos.callModule("scorched_earth", "getState", [])
+            // qmllint enable unqualified
+            var state = root.callModuleParse(raw)
+            root.syncState(state)
+
+            // Build result to bundle into outgoing shot message
+            if (root.multiplayerOn && root._outgoingShot && root.lastShot) {
+                var res = root.lastShot.result
+                var bc = (res && res.removedBlocks && res.removedBlocks.length > 0) ? res.removedBlocks[0][0] : -1
+                var br = (res && res.removedBlocks && res.removedBlocks.length > 0) ? res.removedBlocks[0][1] : -1
+                shotPayloadResult = { bc: bc, br: br,
+                                      th: res ? res.tankId : -1,
+                                      hp: [root.tanks[0].hp, root.tanks[1].hp],
+                                      ap: root.activePlayer,
+                                      ts: root.turnSeq,
+                                      st: root.gameStatus }
+            }
+        }
 
         // restore next player's aim
         var nextIdx = root.activePlayer - 1
@@ -381,22 +528,32 @@ Rectangle {
 
         // build turn log entry
         if (root.lastShot) {
-            var s       = root.lastShot
-            var res     = s.result
+            var sl      = root.lastShot
+            var rl      = sl.result
             var outcome = "miss"
-            if (res) {
-                if (res.hit && res.tankId >= 0)
-                    outcome = "HIT P" + res.tankId
-                else if (res.hit && res.removedBlocks && res.removedBlocks.length > 0)
-                    outcome = "blk[" + res.removedBlocks[0][0] + "," + res.removedBlocks[0][1] + "]"
+            if (rl) {
+                // received shot (short format): th/bc/br
+                if (rl.th >= 0)                               outcome = "HIT P" + rl.th
+                else if (rl.bc >= 0)                          outcome = "blk[" + rl.bc + "," + rl.br + "]"
+                // local shot (processShot format): hit/tankId/removedBlocks
+                else if (rl.hit && rl.tankId >= 0)            outcome = "HIT P" + rl.tankId
+                else if (rl.hit && rl.removedBlocks && rl.removedBlocks.length > 0)
+                    outcome = "blk[" + rl.removedBlocks[0][0] + "," + rl.removedBlocks[0][1] + "]"
             }
-            var entry = { turn: root.turnSeq, player: s.player,
-                          angle: s.angle, power: s.power, outcome: outcome }
-            root.turnLog = [entry].concat(root.turnLog).slice(0, 8)
+            root.turnLog = [{ turn: root.turnSeq, player: sl.player, angle: sl.angle, power: sl.power, outcome: outcome }]
+                           .concat(root.turnLog).slice(0, 8)
             root.lastShot = null
         }
 
         root.gamePhase = (root.gameStatus !== 0) ? 3 : 1
+
+        // Send shot to peer after animation (HOST only — result bundled, no preState)
+        if (root.multiplayerOn && root._outgoingShot) {
+            var pending = root._outgoingShot
+            root._outgoingShot = null
+            pending.result = shotPayloadResult
+            root.sendMsg(pending)
+        }
     }
 
     // ── keyboard ─────────────────────────────────────────────────────────────
@@ -779,6 +936,17 @@ Rectangle {
                     font.pixelSize: 12
                     font.family:    "monospace"
                 }
+
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: root.nodeStatus !== ""
+                    text:  "NODE: " + root.nodeStatus
+                    color: root.nodeStatus.toLowerCase().indexOf("connect") >= 0 &&
+                           root.nodeStatus.toLowerCase().indexOf("disconnect") < 0
+                           ? root.colAccent : root.colMuted
+                    font.pixelSize: 10
+                    font.family:    "monospace"
+                }
             }
 
             // ── JOIN sub-panel: enter code + connect ──────────────────────────
@@ -820,9 +988,20 @@ Rectangle {
 
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text:  root.pollBusy ? "CONNECTING..." : " "
+                    text:  root.multiplayerOn ? "CONNECTING..." : " "
                     color: root.colMuted
                     font.pixelSize: 11
+                    font.family:    "monospace"
+                }
+
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: root.nodeStatus !== "" && root.multiplayerOn
+                    text:  "NODE: " + root.nodeStatus
+                    color: root.nodeStatus.toLowerCase().indexOf("connect") >= 0 &&
+                           root.nodeStatus.toLowerCase().indexOf("disconnect") < 0
+                           ? root.colAccent : root.colMuted
+                    font.pixelSize: 10
                     font.family:    "monospace"
                 }
 
@@ -831,7 +1010,7 @@ Rectangle {
                     width:  140
                     height: 36
                     radius: 3
-                    opacity: (codeInput.text.length === 6 && !root.pollBusy) ? 1.0 : 0.4
+                    opacity: (codeInput.text.length === 6 && !root.multiplayerOn) ? 1.0 : 0.4
                     color:        connectArea.containsMouse ? "#2a1a1a" : "#1a0e0e"
                     border.color: root.colP2
 
@@ -849,7 +1028,7 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            if (codeInput.text.length !== 6 || root.pollBusy) return
+                            if (codeInput.text.length !== 6 || root.multiplayerOn) return
                             root.roomId = codeInput.text.toUpperCase()
                             root.enableMultiplayer(
                                 "/scorched-earth/1/room-" + root.roomId + "/json")

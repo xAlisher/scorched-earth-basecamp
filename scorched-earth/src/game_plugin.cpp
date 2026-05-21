@@ -4,16 +4,11 @@
 #include <QJsonArray>
 #include <QDebug>
 #include <algorithm>
+#include <QtCore/QByteArray>
 
 ScorchedEarthPlugin::ScorchedEarthPlugin()
 {
     qDebug() << "ScorchedEarthPlugin: initialized";
-}
-
-ScorchedEarthPlugin::~ScorchedEarthPlugin()
-{
-    delete delivery_;
-    delivery_ = nullptr;
 }
 
 void ScorchedEarthPlugin::snapTankY(int idx)
@@ -101,19 +96,17 @@ QString ScorchedEarthPlugin::moveTank(int tankId, int direction)
         return true;
     };
 
-    const int bs = layout_.blockSize;
-
-    // Try 1: step up/down via topmost surface (normal staircase movement).
+    // Try 1: flat or downhill only — uphill is blocked (walls are impenetrable).
     int snapY = terrainSnapY(terrain_, newCol, layout_);
-    if (snapY >= tanks_[idx].y - bs && canStand(snapY)) {
+    if (snapY >= tanks_[idx].y && canStand(snapY)) {
         tanks_[idx].x = newX;
         tanks_[idx].y = snapY;
         return QJsonDocument(QJsonObject{{"x", tanks_[idx].x}}).toJson(QJsonDocument::Compact);
     }
 
-    // Try 2: stay at current level and enter a tunnel (floor at same height or below).
+    // Try 2: enter tunnel at current level or below (terrainFloorY scans downward).
     int floorY = terrainFloorY(terrain_, newCol, tanks_[idx].y, layout_);
-    if (canStand(floorY) && floorY >= tanks_[idx].y - bs) {
+    if (canStand(floorY)) {
         tanks_[idx].x = newX;
         tanks_[idx].y = floorY;
         return QJsonDocument(QJsonObject{{"x", tanks_[idx].x}}).toJson(QJsonDocument::Compact);
@@ -199,12 +192,9 @@ QString ScorchedEarthPlugin::processShot(int tankId, double angle, double power)
                                        : QString("miss")))
              << "| status=" << status_;
 
-    // Emit stateChanged event
-    if (logosAPI) {
-        auto* client = logosAPI->getClient("scorched_earth");
-        if (client)
-            client->onEventResponse(this, "stateChanged", {buildState()});
-    }
+    // NOTE: do NOT emit stateChanged here — QML calls getState() in onAnimationComplete().
+    // Emitting from inside a synchronous callModule would deadlock (QML thread waiting for
+    // processShot result while module waits for QML to ack the stateChanged event).
 
     return QJsonDocument(result).toJson(QJsonDocument::Compact);
 }
@@ -221,84 +211,104 @@ QString ScorchedEarthPlugin::activePlayer()
 
 QString ScorchedEarthPlugin::enableMultiplayer(const QString& contentTopic)
 {
-    if (!logosAPI) return R"({"success":false,"error":"no api"})";
-    contentTopic_ = contentTopic;
+    if (!logosAPI)   return R"({"success":false,"error":"no api"})";
+    // Same topic: no-op (avoids double-init).
+    if (mpEnabled_ && contentTopic_ == contentTopic) return R"({"success":true})";
+    // Different topic: node/handlers already up — just re-subscribe to the new room.
+    if (mpEnabled_ && contentTopic_ != contentTopic) {
+        deliveryClient_->invokeRemoteMethod("delivery_module", "unsubscribe", contentTopic_);
+        contentTopic_ = contentTopic;
+        deliveryClient_->invokeRemoteMethod("delivery_module", "subscribe", contentTopic_);
+        qDebug() << "ScorchedEarthPlugin: enableMultiplayer re-subscribed topic=" << contentTopic_;
+        return R"({"success":true})";
+    }
 
-    // Lazy-init typed DeliveryModule client
-    if (!delivery_)
-        delivery_ = new DeliveryModule(logosAPI);
+    contentTopic_   = contentTopic;
+    deliveryClient_ = logosAPI->getClient("delivery_module");
+    if (!deliveryClient_) return R"({"success":false,"error":"no delivery_module client"})";
 
-    emitP2PStatus("Connecting... (1/3) creating node");
-    QThread* t = QThread::create([this]() { doMultiplayerSetup(); });
-    connect(t, &QThread::finished, t, &QThread::deleteLater);
-    t->start();
-    return R"({"success":true})";
-}
-
-void ScorchedEarthPlugin::doMultiplayerSetup()
-{
-    if (!delivery_) { emitP2PStatus("Error: no delivery client"); return; }
-
-    // Use SCORCHED_TCP_PORT to determine role:
-    //   not set / 60000 → HOST: fixed node key so PeerID is deterministic
-    //   any other port  → GUEST: connect directly to HOST's known multiaddr
-    // Fixed key: 0102…1f20 → PeerID 16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP
+    // Build node config
     QByteArray envPort = qgetenv("SCORCHED_TCP_PORT");
-    int requestedPort = envPort.isEmpty() ? 60000 : envPort.toInt();
-    bool isFirstNode  = (requestedPort == 60000);
-
-    // discv5 UDP port: offset from 9000 by TCP port delta to avoid collisions between instances
-    int discv5Port = 9000 + (requestedPort - 60000);
-
+    int requestedPort  = envPort.isEmpty() ? 60000 : envPort.toInt();
+    int discv5Port     = 9000 + (requestedPort - 60000);
     QString cfg;
-    if (isFirstNode) {
-        cfg = QString(R"({"logLevel":"DEBUG","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":60000,"discv5UdpPort":%1,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"})")
+    if (requestedPort == 60000) {
+        cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":60000,"discv5UdpPort":%1,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20","staticNodes":["/ip4/127.0.0.1/tcp/60001/p2p/16Uiu2HAmAD6tSgCQZNS1aNwyQS94ud45VoW7uXdw7UhiCwp247iq"]})")
                   .arg(discv5Port);
     } else {
-        cfg = QString(R"({"logLevel":"DEBUG","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1,"discv5UdpPort":%2,"staticNodes":["/ip4/127.0.0.1/tcp/60000/p2p/16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP"]})")
+        cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1,"discv5UdpPort":%2,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f21","staticNodes":["/ip4/127.0.0.1/tcp/60000/p2p/16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP"]})")
                   .arg(requestedPort).arg(discv5Port);
     }
 
-    LogosResult r1 = delivery_->createNode(cfg);
-    if (!r1.success) { emitP2PStatus("Error createNode: " + r1.getError()); return; }
+    // 1. Create node (sync — tictactoe pattern)
+    deliveryClient_->invokeRemoteMethod("delivery_module", "createNode", cfg);
 
-    emitP2PStatus("Connecting... (2/3) starting");
-    LogosResult r2 = delivery_->start();
-    if (!r2.success) { emitP2PStatus("Error start: " + r2.getError()); return; }
+    // 2. Register event handlers via LogosObject (tictactoe pattern)
+    deliveryObject_ = deliveryClient_->requestObject("delivery_module");
+    if (deliveryObject_) {
+        deliveryClient_->onEvent(deliveryObject_, "messageReceived",
+            [this](const QString&, const QVariantList& data) {
+                if (data.size() < 3) return;
+                if (auto* c = logosAPI->getClient("scorched_earth"))
+                    c->onEventResponse(this, "p2pMessage", {data[2]});
+            });
+        deliveryClient_->onEvent(deliveryObject_, "connectionStateChanged",
+            [this](const QString&, const QVariantList& data) {
+                QString s = data.size() > 0 ? data[0].toString() : QString();
+                if (!s.isEmpty()) {
+                    if (auto* c = logosAPI->getClient("scorched_earth"))
+                        c->onEventResponse(this, "p2pStatus", {s});
+                }
+            });
+    }
 
-    emitP2PStatus("Connecting... (3/3) subscribing");
-    LogosResult r3 = delivery_->subscribe(contentTopic_);
-    if (!r3.success) { emitP2PStatus("Error subscribe: " + r3.getError()); return; }
+    // 3. Start + subscribe (sync)
+    deliveryClient_->invokeRemoteMethod("delivery_module", "start");
+    deliveryClient_->invokeRemoteMethod("delivery_module", "subscribe", contentTopic_);
 
-    // Wire events via typed API
-    delivery_->on("message", [this](const QVariantList& data) {
-        if (!logosAPI || data.size() < 2) return;
-        if (auto* c = logosAPI->getClient("scorched_earth"))
-            c->onEventResponse(this, "p2pMessage", {data[1]});
-    });
-    delivery_->on("connectionStateChanged", [this](const QVariantList& data) {
-        QString status = data.size() > 0 ? data[0].toString() : QString();
-        if (!status.isEmpty())
-            emitP2PStatus(status);
-    });
-
-    emitP2PStatus("Connected");
+    mpEnabled_ = true;
+    qDebug() << "ScorchedEarthPlugin: enableMultiplayer topic=" << contentTopic_;
+    return R"({"success":true})";
 }
 
-void ScorchedEarthPlugin::emitP2PStatus(const QString& status)
+QString ScorchedEarthPlugin::loadState(const QString& json)
 {
-    QMetaObject::invokeMethod(this, [this, status]() {
-        if (logosAPI) {
-            if (auto* c = logosAPI->getClient("scorched_earth"))
-                c->onEventResponse(this, "p2pStatus", {status});
+    QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+    if (!doc.isObject()) return R"({"success":false,"error":"invalid json"})";
+    QJsonObject obj = doc.object();
+
+    layout_ = TerrainLayout{};   // same defaults as newGame
+
+    if (obj.contains("terrain") && obj["terrain"].isArray()) {
+        QJsonArray ta = obj["terrain"].toArray();
+        terrain_.clear();
+        terrain_.reserve(ta.size());
+        for (const auto& v : ta)
+            terrain_.push_back(v.toInt() != 0);
+    }
+
+    if (obj.contains("tanks") && obj["tanks"].isArray()) {
+        QJsonArray ta = obj["tanks"].toArray();
+        for (int i = 0; i < 2 && i < ta.size(); ++i) {
+            QJsonObject t = ta[i].toObject();
+            tanks_[i].x  = t["x"].toInt();
+            tanks_[i].y  = t["y"].toInt();
+            tanks_[i].hp = t["hp"].toInt(100);
         }
-    }, Qt::QueuedConnection);
+    }
+
+    if (obj.contains("activePlayer")) activePlayer_ = obj["activePlayer"].toInt();
+    if (obj.contains("turnSeq"))      turnSeq_      = obj["turnSeq"].toInt();
+    if (obj.contains("status"))       status_       = obj["status"].toInt();
+
+    qDebug() << "ScorchedEarthPlugin: loadState activePlayer=" << activePlayer_ << "turnSeq=" << turnSeq_;
+    return R"({"success":true})";
 }
 
 QString ScorchedEarthPlugin::sendP2PMsg(const QString& jsonPayload)
 {
-    if (!delivery_ || contentTopic_.isEmpty())
+    if (!mpEnabled_ || !deliveryClient_)
         return R"({"success":false,"error":"not initialized"})";
-    LogosResult r = delivery_->send(contentTopic_, jsonPayload);
-    return r.success ? R"({"success":true})" : R"({"success":false,"error":")" + r.getError() + R"("})";
+    deliveryClient_->invokeRemoteMethod("delivery_module", "send", contentTopic_, jsonPayload);
+    return R"({"success":true})";
 }

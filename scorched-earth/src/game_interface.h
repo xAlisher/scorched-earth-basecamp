@@ -34,6 +34,9 @@ public:
     // P2P multiplayer: send a JSON payload to the current content topic.
     Q_INVOKABLE virtual QString sendP2PMsg(const QString& jsonPayload) = 0;
 
+    // P2P multiplayer: restore full game state from JSON snapshot (used by joiner).
+    Q_INVOKABLE virtual QString loadState(const QString& json) = 0;
+
 signals:
     void eventResponse(const QString& name, const QVariantList& data);
 };
