@@ -228,16 +228,18 @@ QString ScorchedEarthPlugin::enableMultiplayer(const QString& contentTopic)
     if (!deliveryClient_) return R"({"success":false,"error":"no delivery_module client"})";
 
     // Build node config
-    QByteArray envPort = qgetenv("SCORCHED_TCP_PORT");
-    int requestedPort  = envPort.isEmpty() ? 60000 : envPort.toInt();
-    int discv5Port     = 9000 + (requestedPort - 60000);
+    QByteArray envPort   = qgetenv("SCORCHED_TCP_PORT");
+    QByteArray envPeerIp = qgetenv("SCORCHED_PEER_IP");
+    int requestedPort    = envPort.isEmpty()   ? 60000       : envPort.toInt();
+    QString peerIp       = envPeerIp.isEmpty() ? "127.0.0.1" : QString::fromUtf8(envPeerIp);
+    int discv5Port       = 9000 + (requestedPort - 60000);
     QString cfg;
     if (requestedPort == 60000) {
-        cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":60000,"discv5UdpPort":%1,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20","staticNodes":["/ip4/127.0.0.1/tcp/60001/p2p/16Uiu2HAmAD6tSgCQZNS1aNwyQS94ud45VoW7uXdw7UhiCwp247iq"]})")
-                  .arg(discv5Port);
+        cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":60000,"discv5UdpPort":%1,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20","staticNodes":["/ip4/%2/tcp/60001/p2p/16Uiu2HAmAD6tSgCQZNS1aNwyQS94ud45VoW7uXdw7UhiCwp247iq"]})")
+                  .arg(discv5Port).arg(peerIp);
     } else {
-        cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1,"discv5UdpPort":%2,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f21","staticNodes":["/ip4/127.0.0.1/tcp/60000/p2p/16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP"]})")
-                  .arg(requestedPort).arg(discv5Port);
+        cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1,"discv5UdpPort":%2,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f21","staticNodes":["/ip4/%3/tcp/60000/p2p/16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP"]})")
+                  .arg(requestedPort).arg(discv5Port).arg(peerIp);
     }
 
     // 1. Create node (sync — tictactoe pattern)
