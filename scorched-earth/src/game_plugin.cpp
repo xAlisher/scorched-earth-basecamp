@@ -5,6 +5,7 @@
 #include <QDebug>
 #include <algorithm>
 #include <QtCore/QByteArray>
+#include <QtCore/QRandomGenerator>
 
 ScorchedEarthPlugin::ScorchedEarthPlugin()
 {
@@ -227,20 +228,18 @@ QString ScorchedEarthPlugin::enableMultiplayer(const QString& contentTopic)
     deliveryClient_ = logosAPI->getClient("delivery_module");
     if (!deliveryClient_) return R"({"success":false,"error":"no delivery_module client"})";
 
-    // Build node config
-    QByteArray envPort   = qgetenv("SCORCHED_TCP_PORT");
-    QByteArray envPeerIp = qgetenv("SCORCHED_PEER_IP");
-    int requestedPort    = envPort.isEmpty()   ? 60000       : envPort.toInt();
-    QString peerIp       = envPeerIp.isEmpty() ? "127.0.0.1" : QString::fromUtf8(envPeerIp);
-    int discv5Port       = 9000 + (requestedPort - 60000);
-    QString cfg;
-    if (requestedPort == 60000) {
-        cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":60000,"discv5UdpPort":%1,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20","staticNodes":["/ip4/%2/tcp/60001/p2p/16Uiu2HAmAD6tSgCQZNS1aNwyQS94ud45VoW7uXdw7UhiCwp247iq"]})")
-                  .arg(discv5Port).arg(peerIp);
-    } else {
-        cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1,"discv5UdpPort":%2,"nodeKey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f21","staticNodes":["/ip4/%3/tcp/60000/p2p/16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP"]})")
-                  .arg(requestedPort).arg(discv5Port).arg(peerIp);
-    }
+    // Build node config — random nodeKey per launch (no PeerID collisions).
+    // Peer discovery via logos.dev relay mesh; no staticNodes needed.
+    QByteArray envPort = qgetenv("SCORCHED_TCP_PORT");
+    int requestedPort  = envPort.isEmpty() ? 60000 : envPort.toInt();
+    int discv5Port     = 9000 + (requestedPort - 60000);
+
+    QString nodeKey;
+    for (int i = 0; i < 32; ++i)
+        nodeKey += QString("%1").arg(QRandomGenerator::global()->bounded(256), 2, 16, QChar('0'));
+
+    QString cfg = QString(R"({"logLevel":"INFO","mode":"Core","preset":"logos.dev","relay":true,"tcpPort":%1,"discv5UdpPort":%2,"nodeKey":"%3"})")
+                  .arg(requestedPort).arg(discv5Port).arg(nodeKey);
 
     // 1. Create node (sync — tictactoe pattern)
     deliveryClient_->invokeRemoteMethod("delivery_module", "createNode", cfg);

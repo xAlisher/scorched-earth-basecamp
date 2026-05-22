@@ -12,8 +12,8 @@ Turn-based artillery game for [Logos Basecamp](https://github.com/logos-co/logos
 
 ## POC limitations
 
-- **Requires `SCORCHED_PEER_IP` for cross-machine** — set to the other machine's IP for direct dial; defaults to `127.0.0.1` (same-machine only). Falls back to `logos.dev` relay if unset.
-- **Fixed node keys** — two hardcoded Waku node keys (`...1f20` / `...1f21`) produce deterministic PeerIDs. Only two simultaneous instances are supported without config changes.
+- **Relies on `logos.dev` bootstrap fleet** — both peers must reach the Logos relay nodes for discovery. No self-hosted bootstrap option yet.
+- **Random node key per launch** — new PeerID on every start; no persistent identity.
 - **No internet independence** — both machines must be able to reach the `logos.dev` fleet. No self-hosted bootstrap option yet.
 - **Single hardcoded terrain** — no procedural generation yet.
 - **No persistence** — game state is in-memory; closing the app loses the session.
@@ -21,17 +21,15 @@ Turn-based artillery game for [Logos Basecamp](https://github.com/logos-co/logos
 
 ## Cross-machine setup
 
-Each machine sets `SCORCHED_PEER_IP` to the **other** machine's IP:
-
 ```bash
-# Wild (HOST, default port 60000) — point at Khidr
-SCORCHED_PEER_IP=<khidr-ip> ~/logos-basecamp-current.AppImage
+# Wild (HOST, default port 60000)
+~/logos-basecamp-current.AppImage
 
-# Khidr (GUEST, port 60001) — point at Wild
-SCORCHED_TCP_PORT=60001 SCORCHED_PEER_IP=<wild-ip> WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 ~/logos-basecamp-current.AppImage
+# Khidr (GUEST, port 60001 — avoids port conflict)
+SCORCHED_TCP_PORT=60001 WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 ~/logos-basecamp-current.AppImage
 ```
 
-Omit `SCORCHED_PEER_IP` for same-machine two-instance testing (defaults to `127.0.0.1`).
+Both nodes get a random PeerID at startup and find each other via the `logos.dev` relay mesh. Share the 6-character room code out of band to start.
 
 ## Modules
 
