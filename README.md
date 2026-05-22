@@ -12,9 +12,9 @@ Turn-based artillery game for [Logos Basecamp](https://github.com/logos-co/logos
 
 ## POC limitations
 
-- **Static nodes hardcoded** — both peers dial each other's hardcoded static multiaddr. No DHT-based peer discovery; works on LAN or when IPs are known in advance.
+- **Relies on logos.dev bootstrap fleet** — cross-machine peers find each other via the hardcoded `logos.dev` relay nodes, not direct dial. Static node hints in config are `127.0.0.1` — same-machine only.
 - **Fixed node keys** — two hardcoded Waku node keys (`...1f20` / `...1f21`) produce deterministic PeerIDs. Only two simultaneous instances are supported without config changes.
-- **No NAT traversal** — direct TCP only; no hole-punching or relay.
+- **No internet independence** — both machines must be able to reach the `logos.dev` fleet. No self-hosted bootstrap option yet.
 - **Single hardcoded terrain** — no procedural generation yet.
 - **No persistence** — game state is in-memory; closing the app loses the session.
 - **1v1 only** — no spectators or reconnect support.
