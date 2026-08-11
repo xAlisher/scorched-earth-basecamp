@@ -1,5 +1,8 @@
 # basecamp-scorched-earth
 
+> This is a personal, experimental hobby project. It is not an official Logos product. Not audited.
+
+
 Turn-based artillery game for [Logos Basecamp](https://github.com/logos-co/logos-app).
 
 **Status: proof-of-concept** — hot-seat and P2P multiplayer work end-to-end, but this is a dev demo, not a consumer release.
